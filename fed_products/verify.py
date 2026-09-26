@@ -3,7 +3,7 @@
 from collections import Counter, defaultdict
 
 from . import board, minneapolis
-from .beige_book import REPLACEMENT_CHARACTER, partition_of, row_id
+from .beige_book import REPLACEMENT_CHARACTER, partition_of, row_id, unavailable
 from .sections import ORDER, SPECIAL_REPORT, STANDARD, district_number
 from .store import partition_path
 
@@ -44,6 +44,7 @@ def verify(store, source=None):
     for path in sorted(files - set(expected.values())):
         problems.append(f"{path} is not in the manifest")
     problems += check_editions(hub)
+    problems += check_texts(hub)
     listing = manifest.get("listing") or {}
     report = {
         "editions": len(hub),
@@ -86,8 +87,8 @@ def check_partition(key, entry, rows):
             bad["rows with only one of source and url"].append(uid)
         if row["text"] is not None and row["url"] is None:
             bad["rows with text but no url"].append(uid)
-        if row["text"] is None and row["url"] is not None and row["source"] != minneapolis.SOURCE:
-            bad[f"rows without text from a page not on {minneapolis.SOURCE}"].append(uid)
+        if row["text"] is None and row["url"] is not None and row["source"] != minneapolis.SOURCE and (row["edition"], row["section"]) not in board.ANOTHER_REPORT:
+            bad[f"rows without text from a page not on {minneapolis.SOURCE} and not in board.ANOTHER_REPORT"].append(uid)
         # The card tells readers of a row without text to use the edition's PDF.
         if row["text"] is None and not row["pdf_url"]:
             bad["rows without text or pdf_url"].append(uid)
@@ -100,7 +101,7 @@ def check_partition(key, entry, rows):
     gaps = sorted(row["id"] for row in rows if row["text"] is None)
     if gaps != sorted(entry.get("gaps") or []):
         problems.append(f"{key}: rows without text {gaps[:SAMPLE]}, the manifest says {sorted(entry.get('gaps') or [])[:SAMPLE]}")
-    notes = sorted(row["id"] for row in rows if row["text"] is None and row["url"] is not None)
+    notes = sorted(row["id"] for row in rows if unavailable(row))
     if notes != sorted(entry.get("unavailable") or []):
         problems.append(f"{key}: rows whose page says the report is not available {notes[:SAMPLE]}, the manifest says {sorted(entry.get('unavailable') or [])[:SAMPLE]}")
     replaced = sorted(row["id"] for row in rows if row["text"] and REPLACEMENT_CHARACTER in row["text"])
@@ -133,6 +134,17 @@ def check_editions(hub):
         if special is not None and special["text"] is None:
             problems.append(f"{day}: a special report without text")
     return problems
+
+
+def check_texts(hub):
+    """No two sections hold the same text, spacing aside. On September 25, 2026 the one pair was the summary of October 29, 1997 and the Board's page of January 22, 1997, which holds it (board.ANOTHER_REPORT)."""
+    holders = defaultdict(list)
+    for sections in hub.values():
+        for row in sections.values():
+            if row["text"]:
+                holders[" ".join(row["text"].split())].append(row["id"])
+    same = sorted(sorted(uids) for uids in holders.values() if len(uids) > 1)
+    return [f"{len(same)} texts held by more than one row: {same[:SAMPLE]}"] if same else []
 
 
 def live_diff(manifest, hub, source, problems):

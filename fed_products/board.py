@@ -2,7 +2,7 @@
 
 Two lists name the editions. The Beige Book pages (the current year on the landing page, earlier years from the archive, 1996 on) link each published edition's HTML and PDF. The FOMC historical materials (one page a year; the index listed 1936 to 2020 on September 25, 2026) link the Redbook, as the Beige Book was called until 1983, or Beige Book of each meeting that had one, from May 1970 on. Neither list is complete on its own: on September 25, 2026 the 2003 page of the first omitted September 3, 2003, which the Board hosts, and the 2006 page of the second had four Beige Book links with empty targets.
 
-The Board hosts HTML from October 30, 1996, in four layouts that the HTML link's form identifies (era_of). An edition's pages are never derived from its date: the edition of September 2, 2026 is beigebook202608-summary.htm.
+The Board hosts HTML from October 30, 1996, in four layouts that the HTML link's form identifies (era_of). An edition's pages are never derived from its date: the edition of September 2, 2026 is beigebook202608-summary.htm. A page that holds another edition's report under its own heading is named in ANOTHER_REPORT, and its section has no text.
 """
 
 import re
@@ -33,6 +33,14 @@ ERAS = (
     (4, re.compile(r"/monetarypolicy/beigebook\d{6,8}-summary\.htm$")),
 )
 NAV_LINKS = ("#top", "#pagetop")
+# The summary's note on who prepared it: "Prepared at the Federal Reserve Bank of Atlanta and based on information collected before October 20, 1997".
+COLLECTED = re.compile(rf"based\s+on\s+information\s+collected\s+(?:on\s+or\s+)?before\s+({'|'.join(MONTHS)})\s+(\d{{1,2}}),\s+(\d{{4}})")
+COLLECTED_DAYS = 31
+# Pages that hold another edition's report under their own edition's heading: {(edition, section): the edition whose report it is}. The section is left without text while the page's note says its information was collected for that other edition; a note that fits neither edition raises. Read September 25, 2026.
+ANOTHER_REPORT = {
+    # /fomc/beigebook/1997/19970122/default.htm, headed January 22, 1997, holds the summary of October 29, 1997 word for word, "based on information collected before October 20, 1997", and so does the Minneapolis archive's page of January 1997. The Board's PDF of January 22, 1997 (fomc19970205beige19970122.pdf) holds that edition's own summary, prepared at San Francisco "based on information collected before January 13, 1997".
+    ("1997-01-22", "summary"): "1997-10-29",
+}
 
 
 class ParseError(ValueError):
@@ -257,11 +265,23 @@ def _era3(doc, sections, iso):
                 starts[district] = index
     if list(starts) != list(DISTRICTS) or sorted(starts.values()) != list(starts.values()):
         raise ParseError(f"era 3: district anchors {list(starts)}, expected the twelve in order")
-    bounds = [(SUMMARY, 0, starts[DISTRICTS[0]])] + [(district, starts[district], starts[following] if following else len(children)) for district, following in zip(DISTRICTS, DISTRICTS[1:] + (None,))]
+    # A rule after the last district opens the page's notes, which belong to the section that links them, not to the last district: on July 13, 2022, a correction to the summary's "prepared at" note.
+    rules = [index for index, child in enumerate(children) if index > starts[DISTRICTS[-1]] and child.tag == "hr"]
+    last = rules[0] if rules else len(children)
+    bounds = [(SUMMARY, 0, starts[DISTRICTS[0]])] + [(district, starts[district], starts[following] if following else last) for district, following in zip(DISTRICTS, DISTRICTS[1:] + (None,))]
+    notes = {}
+    for child in children[last + 1:]:
+        if not isinstance(child.tag, str) or not _text(child):
+            continue
+        links = {f"#{value}" for anchor in child.iter("a") for value in (anchor.get("name"), anchor.get("id")) if value}
+        owners = [section for section, begin, stop in bounds if any((anchor.get("href") or "").strip() in links for element in children[begin:stop] if isinstance(element.tag, str) for anchor in element.iter("a"))]
+        if len(owners) != 1:
+            raise ParseError(f"era 3: a note after the last district is linked from {owners or 'no section'}: {_text(child)[:60]!r}")
+        notes.setdefault(owners[0], []).append(child)
     out = {}
     for section, begin, end in bounds:
         # Copies with their tails, so text between elements stays; drop_tree() below keeps a dropped element's tail too.
-        run = wrap(children[begin:end])
+        run = wrap(children[begin:end] + notes.get(section, []))
         if section == SUMMARY:
             # Before the summary: an empty float; in 2017 the heading "National Summary", an h4 or (October 18) an h3; the "prepared at" panel (kept, as every layout keeps it); and the table of contents, a list of links within the page.
             for child in list(run):
@@ -297,15 +317,41 @@ def _era4(doc, section):
     return _require(element_text(article), f"era 4 {section}")
 
 
+def _collected(text):
+    """The day a report's note says its information was collected by, or None."""
+    match = COLLECTED.search(text)
+    return date(int(match.group(3)), MONTHS.index(match.group(1)) + 1, int(match.group(2))) if match else None
+
+
+def _collected_for(day, iso):
+    return day is not None and 0 <= (date.fromisoformat(iso) - day).days <= COLLECTED_DAYS
+
+
+def _withhold(texts, iso):
+    """Leaves out the text of each section ANOTHER_REPORT names while the page still holds that other edition's report."""
+    for section, text in texts.items():
+        other = ANOTHER_REPORT.get((iso, section))
+        if other is None:
+            continue
+        day = _collected(text)
+        if _collected_for(day, other):
+            texts[section] = None
+        elif not _collected_for(day, iso):
+            raise ParseError(f"{section} of {spoken(iso)}: ANOTHER_REPORT says the page holds the report of {spoken(other)}, but its note names {spoken(day.isoformat()) if day else 'no day'}")
+    return texts
+
+
 def parse_page(era, raw, sections, iso):
-    """{section: text} for the sections a page of an edition dated iso holds. The section's own heading is left out (the section column names it); everything else in the section's container is kept, subheadings, the "prepared at" note and the closing "for more information" line included. Raises ParseError unless every section is found with text."""
+    """{section: text} for the sections a page of an edition dated iso holds. The section's own heading is left out (the section column names it); everything else in the section's container is kept, subheadings, the "prepared at" note and the closing "for more information" line included. Raises ParseError unless every section is found with text. A section ANOTHER_REPORT names comes back as None while its page holds the other edition's report."""
     doc = parse_html(raw)
     if era == 1:
-        return {sections[0]: _era1(doc, sections[0], iso)}
-    if era == 2:
-        return _era2(doc, sections, iso)
-    if era == 3:
-        return _era3(doc, sections, iso)
-    if era == 4:
-        return {sections[0]: _era4(doc, sections[0])}
-    raise ParseError(f"no era {era}")
+        texts = {sections[0]: _era1(doc, sections[0], iso)}
+    elif era == 2:
+        texts = _era2(doc, sections, iso)
+    elif era == 3:
+        texts = _era3(doc, sections, iso)
+    elif era == 4:
+        texts = {sections[0]: _era4(doc, sections[0])}
+    else:
+        raise ParseError(f"no era {era}")
+    return _withhold(texts, iso)

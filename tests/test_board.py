@@ -150,3 +150,42 @@ def test_a_page_without_its_layout_raises():
         parse_page(2, recorded(f"{MP}beigebook202001.htm"), STANDARD, "2020-01-15")
     with pytest.raises(ParseError):
         year_table(b"<html><body><table><tr><td>January 14</td></tr></table></body></html>", board.LANDING)
+
+
+JANUARY_1997 = "https://www.federalreserve.gov/fomc/beigebook/1997/19970122/default.htm"
+OCTOBER_1997 = "https://www.federalreserve.gov/fomc/beigebook/1997/19971029/default.htm"
+
+
+def test_a_page_that_holds_another_editions_report_has_no_text(monkeypatch):
+    # Headed January 22, 1997, the page holds the summary of October 29, 1997, "based on information collected before October 20, 1997".
+    october = parse_page(1, recorded(OCTOBER_1997), ("summary",), "1997-10-29")["summary"]
+    assert october.startswith("Prepared at the Federal Reserve Bank of Atlanta and based on information collected before October 20, 1997.")
+    assert parse_page(1, recorded(JANUARY_1997), ("summary",), "1997-01-22") == {"summary": None}
+    monkeypatch.setattr(board, "ANOTHER_REPORT", {})
+    assert parse_page(1, recorded(JANUARY_1997), ("summary",), "1997-01-22")["summary"] == october, "without the entry the page's text would be taken"
+
+
+def test_an_entry_that_no_longer_describes_its_page_takes_a_fitting_report_and_raises_on_another(monkeypatch):
+    # A corrected page, whose note fits its own edition, gives its text.
+    monkeypatch.setattr(board, "ANOTHER_REPORT", {("1997-10-29", "summary"): "1997-01-22"})
+    assert parse_page(1, recorded(OCTOBER_1997), ("summary",), "1997-10-29")["summary"].startswith("Prepared at the Federal Reserve Bank of Atlanta")
+    monkeypatch.setattr(board, "ANOTHER_REPORT", {("1997-01-22", "summary"): "1996-12-04"})
+    with pytest.raises(ParseError, match="October 20, 1997"):
+        parse_page(1, recorded(JANUARY_1997), ("summary",), "1997-01-22")
+
+
+JULY_2022 = f"{MP}beigebook202207.htm"
+
+
+def test_a_note_at_the_foot_of_a_whole_edition_goes_with_the_section_that_links_it():
+    # The summary's "prepared at" panel links a correction printed after the last district, below a rule.
+    texts = parse_page(3, recorded(JULY_2022), STANDARD, "2022-07-13")
+    assert texts["summary"].startswith("This report was prepared at the Federal Reserve Bank of Atlanta based on information collected on or before July 6, 2022.")
+    assert texts["summary"].endswith("\n\n*Note: On July 19, 2022, a typo was corrected to change the date from \"July 13, 2022\" to \"July 6, 2022\" in the following sentence: \"This report was prepared at the Federal Reserve Bank of Atlanta based on information collected on or before July 13, 2022.\" Return to text")
+    assert "*Note" not in texts["san-francisco"] and texts["san-francisco"].endswith("with a notable exception being pet insurance.")
+
+
+def test_a_note_at_the_foot_that_no_section_links_raises():
+    raw = recorded(JULY_2022).replace(b'href="#fn1"', b'href="#elsewhere"')
+    with pytest.raises(ParseError, match="linked from no section"):
+        parse_page(3, raw, STANDARD, "2022-07-13")

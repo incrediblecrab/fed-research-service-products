@@ -11,7 +11,7 @@ The pipeline package, run as `python -m fed_products {run,probe,card,verify,squa
 - `cli.py`, `__main__.py`: the commands. `probe` decides whether a sync is needed, `run` syncs within a time budget, `verify` checks the Hub against the manifest (with `--live`, also against every list), `card` re-renders the card, `squash` shortens Hub history.
 - `pipeline.py`: the sync loop, the writer lease, the probe's decision.
 - `beige_book.py`: the schema, the rows, the units a fetch covers, and the source that reads every list.
-- `board.py`: the Board's lists and its four page layouts.
+- `board.py`: the Board's lists, its four page layouts, and the one page known to hold another edition's report.
 - `minneapolis.py`: the Minneapolis archive's sitemap and pages.
 - `sections.py`: the sections and their order.
 - `text.py`: HTML to plain text, laid out as a browser shows it.

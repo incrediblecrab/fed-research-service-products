@@ -10,7 +10,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from fed_products.beige_book import SCHEMA, normalize
+from fed_products import board
+from fed_products.beige_book import SCHEMA, normalize, unavailable
 from fed_products.pipeline import MAX_ATTEMPTS
 from fed_products.store import partition_path, read_parquet, sha256_file, write_parquet
 from fed_products.verify import verify
@@ -52,7 +53,7 @@ def rewrite(store, key, change, match=True):
         entry.update(rows=len(rows), sha256=sha256_file(path))
         if match:
             entry.update(editions=len({row["edition"] for row in rows}), gaps=sorted(row["id"] for row in rows if row["text"] is None),
-                         unavailable=sorted(row["id"] for row in rows if row["text"] is None and row["url"] is not None),
+                         unavailable=sorted(row["id"] for row in rows if unavailable(row)),
                          replacement_character=sorted(row["id"] for row in rows if row["text"] and "\ufffd" in row["text"]))
 
     edit_manifest(store, update)
@@ -85,7 +86,7 @@ PLANTS = {
     "wrong district": (lambda store: rewrite(store, "2026", where("2026-01-14-boston", district=2)), "2026: wrong district numbers ['2026-01-14-boston']"),
     "source without url": (lambda store: rewrite(store, "2026", where("2026-01-14-boston", url=None)), "2026: rows with only one of source and url ['2026-01-14-boston']"),
     "text without url": (lambda store: rewrite(store, "2026", where("2026-01-14-boston", url=None, source=None)), "2026: rows with text but no url ['2026-01-14-boston']"),
-    "textless board row": (lambda store: rewrite(store, "2026", where("2026-01-14-boston", text=None)), "2026: rows without text from a page not on minneapolisfed.org ['2026-01-14-boston']"),
+    "textless board row": (lambda store: rewrite(store, "2026", where("2026-01-14-boston", text=None)), "2026: rows without text from a page not on minneapolisfed.org and not in board.ANOTHER_REPORT ['2026-01-14-boston']"),
     "gap without a pdf": (lambda store: rewrite(store, "1971", where("1971-06-02-atlanta", pdf_url=None)), "1971: rows without text or pdf_url ['1971-06-02-atlanta']"),
     "unknown source": (lambda store: rewrite(store, "2026", where("2026-01-14-boston", source="example.org")), "2026: unknown sources ['2026-01-14-boston']"),
     "blank text": (lambda store: rewrite(store, "2026", where("2026-01-14-boston", text=" \n")), "2026: blank text ['2026-01-14-boston']"),
@@ -97,6 +98,7 @@ PLANTS = {
     "missing section": (lambda store: rewrite(store, "2026", drop("2026-01-14-boston")), "2026-01-14: sections missing ['boston'], unexpected []"),
     "gap in a month with one edition": (lambda store: rewrite(store, "1983", where("1983-05-18-boston", text=None, source=None, url=None)), "1983-05-18: no page for ['boston'], in a month with one edition"),
     "mixed sources": (lambda store: rewrite(store, "2026", where("2026-01-14-boston", source="minneapolisfed.org")), "2026-01-14: some sections from federalreserve.gov, others not"),
+    "same text": (lambda store: rewrite(store, "2026", where("2026-01-14-boston", text="new-york  of\n2026-01-14")), "1 texts held by more than one row: [['2026-01-14-boston', '2026-01-14-new-york']]"),
     "special report without text": (lambda store: rewrite(store, "1983", where("1983-05-18-special-report", text=None)), "1983-05-18: a special report without text"),
 }
 
@@ -132,6 +134,16 @@ def test_a_note_in_a_month_with_one_edition_passes(synced):
     store, _ = synced
     rewrite(store, "1983", where("1983-05-18-boston", text=None, url=NOTE_URL))
     assert verify(store)["problems"] == []
+
+
+def test_a_board_page_named_in_another_report_passes_without_text(synced, monkeypatch):
+    store, state = synced
+    pdf = "https://www.federalreserve.gov/monetarypolicy/files/BeigeBook_20260114.pdf"
+    rewrite(store, "2026", lambda rows: [row.update(pdf_url=pdf, text=None if row["section"] == "summary" else row["text"]) for row in rows if row["edition"] == "2026-01-14"])
+    state.pdfs["2026-01-14"] = pdf
+    assert verify(store)["problems"] == ["2026: rows without text from a page not on minneapolisfed.org and not in board.ANOTHER_REPORT ['2026-01-14-summary']"]
+    monkeypatch.setattr(board, "ANOTHER_REPORT", {("2026-01-14", "summary"): "2025-03-05"})
+    assert verify(store, ScriptedSource(state))["problems"] == []
 
 
 def test_the_live_diff_names_editions_missing_from_a_complete_year_and_editions_no_list_names(synced):

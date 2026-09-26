@@ -15,7 +15,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 
-from .beige_book import REPLACEMENT_CHARACTER, comparable, units_of
+from .beige_book import REPLACEMENT_CHARACTER, comparable, unavailable, units_of
 from .board import LANDING, era_of
 from .http import Blocked, QuotaExhausted
 from .sections import rank
@@ -410,7 +410,7 @@ def _write(ctx, manifest, partition, stored, states, todo, done, counts, kept, f
         "units": {uid: states[uid] for uid in sorted(states)},
         "failed": sorted(uid for uid, f in failures.items() if f.get("partition") == partition.key and f["attempts"] >= MAX_ATTEMPTS),
         "gaps": sorted(row["id"] for row in rows if row["text"] is None),
-        "unavailable": sorted(row["id"] for row in rows if row["text"] is None and row["url"] is not None),
+        "unavailable": sorted(row["id"] for row in rows if unavailable(row)),
         "sources": dict(sorted(Counter(row["source"] or "none" for row in rows if row["text"] is not None).items())),
         "replacement_character": sorted(row["id"] for row in rows if row["text"] and REPLACEMENT_CHARACTER in row["text"]),
         "unlisted": list(kept),

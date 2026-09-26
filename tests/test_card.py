@@ -44,6 +44,10 @@ def test_each_page_assigned_by_the_boards_pdf_is_named(monkeypatch):
     assert "Where a page prints a day" not in render(new_manifest())
 
 
+def test_the_columns_say_a_row_without_text_can_name_a_page_that_holds_another_report():
+    assert "holds another edition's report" in COLUMN_DOCS["source"] and "holds another edition's report" in COLUMN_DOCS["url"]
+
+
 def test_a_synced_manifest_renders_its_numbers(tmp_path):
     store, state = local_store(tmp_path), beige(gaps={"1971-06-02-atlanta"}, notes={"1971-06-23-boston"}, scheduled=["2026-10-14", "2026-11-25"])
     run_once(store, state)
@@ -60,6 +64,7 @@ def test_a_synced_manifest_renders_its_numbers(tmp_path):
     gaps = card.partition("## Known gaps")[2].partition("## License")[0]
     assert "- 1 section has no text and no page. Each is from an edition that shared its month with another" in gaps and "  - June 2, 1971: atlanta\n" in gaps
     assert "- 1 section has no text because the Minneapolis page holds a note that the report is not available" in gaps and "  - June 23, 1971: boston\n" in gaps
+    assert "the report; `url` names the page. The row keeps `pdf_url`" in gaps
     assert "Every section has text" not in gaps and "units failed" not in card and "unit failed" not in card
 
 
@@ -68,6 +73,7 @@ def test_gap_counts_agree_in_number(tmp_path):
     run_once(store, state)
     card = render(store.read_manifest())
     assert "- 3 sections have no text and no page." in card and "  - June 2, 1971: atlanta, chicago\n  - June 23, 1971: boston\n" in card
+    assert "The rows keep `pdf_url`" in card and "The row keeps" not in card
     assert "holds a note" not in card
 
 

@@ -1,6 +1,6 @@
 """The Beige Book dataset: one row per section of every edition from May 1970 on.
 
-An edition is a date that one of the Board's lists names (board.py). Its text comes from the Board's HTML where either list links it (October 30, 1996 on) and from the Minneapolis Fed's archive before that (minneapolis.py). Every edition has a row for the summary and each of the twelve districts, and May 18, 1983 one more for its special report. A section that no source serves as HTML has a row with null text, and null source and url unless a page holds a note that the report is not available, which they then name.
+An edition is a date that one of the Board's lists names (board.py). Its text comes from the Board's HTML where either list links it (October 30, 1996 on) and from the Minneapolis Fed's archive before that (minneapolis.py). Every edition has a row for the summary and each of the twelve districts, and May 18, 1983 one more for its special report. A section that no source serves as HTML has a row with null text, and null source and url unless a page holds a note that the report is not available, or holds another edition's report (board.ANOTHER_REPORT), which they then name.
 
 A unit is what one fetch covers: a Board edition, or a Minneapolis month, whose pages can hold two editions. Its version changes when a list or the sitemap says something about it changed, and the sync fetches it again then. It is also fetched again when its recheck is due, because the Board's pages can change after release: on September 25, 2026 the pages of January 14, 2026 answered with a Last-Modified date of February 26, 2026.
 """
@@ -57,6 +57,11 @@ def normalize(row):
 
 def row_weight(row):
     return len(row["text"] or "")
+
+
+def unavailable(row):
+    """A row without text whose Minneapolis page holds a note that the report is not available."""
+    return row["text"] is None and row["url"] is not None and row["source"] == minneapolis.SOURCE
 
 
 def comparable(row):

@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 from huggingface_hub import DatasetCard
 
-from fed_products import pipeline
+from fed_products import board, pipeline
 from fed_products.beige_book import MINNEAPOLIS_RECHECK_DAYS, RECENT_RECHECK_DAYS, RECHECK_DAYS, Edition, Unit
 from fed_products.card import render
 from fed_products.http import Blocked
@@ -13,7 +13,7 @@ from fed_products.pipeline import MAX_ATTEMPTS, PROBE_KEY, Partition, decide, or
 from fed_products.sections import STANDARD
 from fed_products.store import CARD, MANIFEST, LocalStore, Superseded
 from fed_products.verify import verify
-from conftest import ScriptedSource, local_store, run_once, scripted
+from conftest import ScriptedSource, board_url, local_store, run_once, scripted
 
 TODAY = date(2026, 9, 25)
 BOARD = ["2025-01-15", "2025-03-05", "2026-01-14", "2026-03-04"]
@@ -310,6 +310,21 @@ def test_a_note_that_a_report_is_not_available_is_a_row_without_text_the_manifes
     card = store.read_text(CARD)
     assert "- 1 section has no text because the Minneapolis page holds a note that the report is not available" in card
     assert "  - January 12, 1971: boston" in card and "  - June 2, 1971: atlanta" in card
+
+
+def test_a_board_page_that_holds_another_editions_report_is_a_row_without_text_the_card_names(tmp_path, monkeypatch):
+    monkeypatch.setattr(board, "ANOTHER_REPORT", {("2026-01-14", "summary"): "2025-03-05"})
+    store, state = local_store(tmp_path), beige(notes={"2026-01-14-summary"}, pdfs={"2026-01-14": "https://www.federalreserve.gov/monetarypolicy/files/BeigeBook_20260114.pdf"})
+    run_once(store, state, today=TODAY)
+    entry = store.read_manifest()["partitions"]["2026"]
+    assert entry["gaps"] == ["2026-01-14-summary"] and entry["unavailable"] == [], "only a Minneapolis page holds a note that the report is not available"
+    row = stored(store, "2026")["2026-01-14-summary"]
+    assert row["text"] is None and row["source"] == "federalreserve.gov" and row["url"] == board_url("2026-01-14")
+    assert verify(store)["problems"] == []
+    gaps = store.read_text(CARD).partition("## Known gaps")[2].partition("## License")[0]
+    assert "- 1 section has no text because the page holds another edition's report under this edition's heading" in gaps
+    assert "  - January 14, 2026: summary, whose page holds the summary of March 5, 2025\n" in gaps
+    assert "- 1 section has no text and no page." in gaps and "holds a note" not in gaps
 
 
 def test_failures_are_retried_then_exhausted_then_retried_daily(tmp_path, monkeypatch):

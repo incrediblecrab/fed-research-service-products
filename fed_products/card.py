@@ -19,8 +19,8 @@ COLUMN_DOCS = {
     "section": f"`summary`, a district ({', '.join(f'`{d}`' for d in DISTRICTS)}) or `special-report`",
     "district": "Federal Reserve district number, 1 (Boston) to 12 (San Francisco); null for the summary and the special report",
     "text": "The section's text (see Text layout); null where no source has it as HTML (see Known gaps)",
-    "source": f"`{board.SOURCE}` or `{minneapolis.SOURCE}`, the site the text was taken from; for a row without text, the site whose page says the report is not available, else null",
-    "url": "The page the text was taken from; for a row without text, the page that says the report is not available, else null",
+    "source": f"`{board.SOURCE}` or `{minneapolis.SOURCE}`, the site the text was taken from; for a row without text, the site whose page says the report is not available or holds another edition's report (see Known gaps), else null",
+    "url": "The page the text was taken from; for a row without text, the page that says the report is not available or holds another edition's report, else null",
     "pdf_url": "The edition's PDF on federalreserve.gov, from the Beige Book pages or else the FOMC historical materials; null when neither links one",
     "source_modified": f"When the page last changed, as its site said at the fetch: the Last-Modified header ({board.SOURCE}) or the sitemap's lastmod, which has no time zone ({minneapolis.SOURCE})",
     "fetched_at": "When the fetch that wrote this row ran (UTC)",
@@ -158,7 +158,7 @@ def render(manifest):
         "",
         "## Text layout",
         "",
-        "Each paragraph is one line, and paragraphs are separated by a blank line. A line break in the page is a single newline, and two or more in a row, which a browser shows as an empty line, are a paragraph break; table cells are separated by tabs, and list items start with \"- \". Subheadings stay as their own paragraphs, and so does the note on which Reserve Bank prepared the report, where the page prints it. Left out: each section's own title (\"Federal Reserve Bank of Boston\", \"National Summary\"), which `section` names; page navigation; and the date that opens each Minneapolis page, which `edition` holds. The older Minneapolis pages are typed text wrapped at about 70 columns; where their HTML marks no paragraphs, a blank line in the text is kept as a paragraph break.",
+        "Each paragraph is one line, and paragraphs are separated by a blank line. A line break in the page is a single newline, and two or more in a row, which a browser shows as an empty line, are a paragraph break; table cells are separated by tabs, and list items start with \"- \". Subheadings stay as their own paragraphs, and so does the note on which Reserve Bank prepared the report, where the page prints it. A note at the foot of a page that holds a whole edition goes with the section that links to it. Left out: each section's own title (\"Federal Reserve Bank of Boston\", \"National Summary\"), which `section` names; page navigation; and the date that opens each Minneapolis page, which `edition` holds. The older Minneapolis pages are typed text wrapped at about 70 columns; where their HTML marks no paragraphs, a blank line in the text is kept as a paragraph break.",
         "",
         "## How it stays current",
         "",
@@ -173,18 +173,21 @@ def render(manifest):
         "## Known gaps",
         "",
     ]
-    pageless = [uid for uid in gaps if uid not in notes]
+    pageless = [uid for uid in gaps if uid not in notes and (uid[:10], uid[11:]) not in board.ANOTHER_REPORT]
+    another = [uid for uid in gaps if (uid[:10], uid[11:]) in board.ANOTHER_REPORT]
     for group, intro in (
         (pageless, "no text and no page. Each is from an edition that shared its month with another, and the Minneapolis archive has one address per section per month, each serving one of the month's editions, so these sections are in no source's HTML"),
         (sorted(notes), "no text because the Minneapolis page holds a note that the report is not available in place of the report; `url` names the page"),
+        (another, "no text because the page holds another edition's report under this edition's heading, as the report's note on when its information was collected shows; `url` names the page"),
     ):
         if not group:
             continue
         by_edition = defaultdict(list)
         for uid in group:
-            by_edition[uid[:10]].append(uid[11:])
+            other = board.ANOTHER_REPORT.get((uid[:10], uid[11:])) if uid in another else None
+            by_edition[uid[:10]].append(uid[11:] + (f", whose page holds the {uid[11:]} of {spoken(other)}" if other else ""))
         count = f"{len(group)} sections have" if len(group) != 1 else "1 section has"
-        lines.append(f"- {count} {intro}. The rows keep `pdf_url`, the Board's PDF of the edition, which this dataset does not read:")
+        lines.append(f"- {count} {intro}. {'The rows keep' if len(group) != 1 else 'The row keeps'} `pdf_url`, the Board's PDF of the edition, which this dataset does not read:")
         for day, sections in sorted(by_edition.items()):
             lines.append(f"  - {spoken(day)}: {', '.join(sections)}")
     if not gaps:
