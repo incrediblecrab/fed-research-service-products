@@ -1,0 +1,106 @@
+# At 00:00 and 12:00 UTC, probe: one request to the Board's Beige Book landing page, and one read of the dataset's metadata, whose card carries the lease, backoff and listing state from the manifest (downloading manifest.json itself would count as a dataset download). When the probe says a sync is needed, sync within the time budget; after a sync that committed, verify the Hub against the manifest and every list, and squash long history. A sync that ran out of budget while still fetching starts the next run itself.
+# Writes to Hugging Face use Trusted Publishing: with `id-token: write`, the CLI sets HF_OIDC_RESOURCE from its --repo, so no Hugging Face token is stored anywhere. The workflow uses no secret.
+name: pipeline
+
+on:
+  schedule:
+    - cron: "0 0,12 * * *"
+  workflow_dispatch:
+    inputs:
+      budget_minutes:
+        description: "Minutes the sync may run (empty: the CLI default)"
+        default: ""
+      args:
+        description: "Extra run arguments for a bounded test, e.g. --local /tmp/smoke --partitions 2026 --max-units 1 (runs without a probe; skips verify and squash)"
+        default: ""
+
+permissions: {}
+
+# One run at a time: a scheduled run that starts while another run is still syncing waits for it. GitHub keeps at most one run waiting and cancels older waiting runs.
+concurrency:
+  group: pipeline
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    # Above the CLI's default sync budget plus setup, the final commit, verify and squash.
+    timeout-minutes: 200
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      more: ${{ steps.sync.outputs.more }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -q .
+      - name: Probe
+        id: probe
+        if: ${{ !inputs.args }}
+        run: |
+          set -o pipefail
+          python -m fed_products probe | tee probe.json
+      - name: Sync
+        id: sync
+        if: ${{ steps.probe.outputs.needed == 'true' || inputs.args }}
+        env:
+          BUDGET: ${{ inputs.budget_minutes }}
+          EXTRA_ARGS: ${{ inputs.args }}
+        run: |
+          set -o pipefail
+          python -m fed_products run ${BUDGET:+--budget-minutes "$BUDGET"} $EXTRA_ARGS | tee run.json
+      - name: Verify against the manifest and every list
+        if: ${{ !inputs.args && steps.sync.outputs.commits > 0 }}
+        run: |
+          set -o pipefail
+          python -m fed_products verify --live | tee verify.json
+      - name: Squash long history
+        if: ${{ !inputs.args && steps.sync.outputs.commits > 0 }}
+        run: python -m fed_products squash
+      - name: Summary
+        if: ${{ !cancelled() }}
+        run: |
+          for step in probe run verify; do
+            if [ -s "$step.json" ]; then { echo "### $step"; echo '```json'; cat "$step.json"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"; fi
+          done
+
+  # GitHub starts scheduled runs late, or drops them, when it is busy. A sync that ran out of budget while still fetching therefore starts the next run instead of waiting; that run probes first, and continues the chain only if it too runs out of budget while fetching. A job of its own, so the job that parses downloaded pages never holds `actions: write`.
+  continue:
+    needs: sync
+    if: ${{ !inputs.args && needs.sync.outputs.more == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Start the next run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run pipeline.yml --ref "$GITHUB_REF_NAME"
+
+  # GitHub disables schedules in a public repository after 60 days without repository activity. This job makes no commit to prevent that: GitHub called keepalive commits a violation of its Terms for circumventing that policy (https://github.com/ddev/github-action-add-on-test/issues/46). Instead it fails once the last commit is 50 days old, so GitHub notifies the user who last changed the cron, who can push one. It runs on every scheduled run, because GitHub starts scheduled runs late or drops them. The log names the schedule that started the run.
+  inactivity:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Fail once the repository has gone 50 days without a commit
+        env:
+          SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          echo "schedule: $SCHEDULE"
+          days=$(( ( $(date +%s) - $(git log -1 --format=%ct) ) / 86400 ))
+          echo "last commit $days days ago"
+          if [ "$days" -ge 50 ]; then
+            echo "::error::No commit in $days days. GitHub disables this schedule after 60 days without repository activity, so push a commit to keep the dataset updating."
+            exit 1
+          fi
