@@ -13,7 +13,7 @@ Offline tests: `pip install '.[test]'`, then `python -m pytest -q`. No network o
 - `test_minneapolis.py`: the sitemap, report pages and their datelines.
 - `test_source.py`: every list read in full, the units they make, the rows a fetch returns, gaps, notes, page dates, conditional rechecks.
 - `test_text.py`: text layout.
-- `test_pipeline.py`: the sync loop: first sync, idle runs, changes, rechecks, removals, retries, the suspect-listing guard, resumption, refetch, the writer lease, the probe's decision.
+- `test_pipeline.py`: the sync loop: first sync, idle runs, changes, rechecks, removals, retries, the suspect-listing guard, resumption, refetch, the writer lease, the probe's decision, and when a run republishes the listing.
 - `test_http.py`: pacing, challenges, rate limits, outages.
 - `test_store.py`: Parquet round trips, the commit fence, the probe state read from the card.
 - `test_verify.py`: each planted data defect is named; exit 1.

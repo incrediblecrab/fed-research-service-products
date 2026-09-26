@@ -27,6 +27,8 @@ MANIFEST_VERSION = 1
 MAX_ATTEMPTS = 3
 # A unit that failed MAX_ATTEMPTS times is left alone this long, then tried again.
 RETRY_AFTER_HOURS = 24
+# The probe asks for a sync once the last full listing is this old, so every list is reread even when the landing page has not changed.
+LISTING_HOURS = 24
 LEASE_MINUTES = 45
 RUNS_KEPT = 20
 # At most this many units are rechecked in one run, in partition order and oldest check first within a partition, so the rechecks that fall due together after a backfill spread over several runs instead of one long one.
@@ -164,7 +166,7 @@ def decide(state, head, writer):
         return True, f"{len(incomplete)} partitions incomplete: {', '.join(incomplete[:5])}"
     if head != listing.get("head"):
         return True, f"landing page {listing.get('head')} -> {head}"
-    if age_hours(listing.get("at")) >= 24:
+    if age_hours(listing.get("at")) >= LISTING_HOURS:
         return True, f"last full listing at {listing.get('at')}"
     return False, "up to date"
 
@@ -259,11 +261,11 @@ def sync(ctx, source):
     if reason == "superseded":
         return dict(run, commits=ctx.stats["commits"])
     runs = base.get("runs") or []
-    # The listing is what the probe compares against, so it is published only by a run that brought every partition up to date with it; until then the probe keeps asking for a run.
+    # The listing is what the probe compares against, so it is published only by a run that brought every partition up to date with it; until then the probe keeps asking for a run. A run that finishes within an hour of the listing falling due republishes it, so the next probe does not ask for another full sync.
     changed = False
     if finished and ctx.only is None and record:
         old = base.get("listing") or {}
-        changed = any(record[key] != old.get(key) for key in ("head", "editions", "scheduled", "partitions")) or age_hours(old.get("at")) > 23
+        changed = any(record[key] != old.get(key) for key in ("head", "editions", "scheduled", "partitions")) or age_hours(old.get("at")) > LISTING_HOURS - 1
         manifest["listing"] = record
     if ctx.store.staged or ctx.stats["commits"] or changed or reason not in CLEAN_STOPS or not runs or age_hours(runs[-1].get("ended")) > 23:
         manifest["runs"] = runs[-(RUNS_KEPT - 1):] + [dict(run, commits=ctx.stats["commits"] + 1)]

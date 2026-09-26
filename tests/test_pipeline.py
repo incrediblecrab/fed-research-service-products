@@ -1,5 +1,6 @@
 """The sync loop against a scripted source and a local store."""
 
+import json
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
@@ -97,6 +98,19 @@ def test_idle_rerun_fetches_and_commits_nothing(tmp_path):
     run = run_once(store, state, today=TODAY)
     assert run["finished"] and run["commits"] == 0
     assert len(store.commits) == commits and len(state.fetched) == fetched
+
+
+@pytest.mark.parametrize("hours_old, republished", [(pipeline.LISTING_HOURS - 1.5, False), (pipeline.LISTING_HOURS - 0.5, True)])
+def test_a_run_republishes_the_listing_from_an_hour_before_it_falls_due(tmp_path, hours_old, republished):
+    store, state = local_store(tmp_path), beige()
+    run_once(store, state, today=TODAY)
+    m = store.read_manifest()
+    m["listing"]["at"] = stamp(hours_old * 60)
+    (store.root / MANIFEST).write_text(json.dumps(m))
+    commits = len(store.commits)
+    run = run_once(store, state, today=TODAY)
+    assert run["finished"] and (len(store.commits) > commits) == republished
+    assert (store.read_manifest()["listing"]["at"] != m["listing"]["at"]) == republished
 
 
 def test_a_run_that_fetches_claims_the_lease_before_its_first_fetch(tmp_path):
@@ -463,7 +477,8 @@ def test_decide():
     assert decide_both(dict(done, partitions={"2026": {"complete": False}}), head, "local") == (True, "1 partitions incomplete: 2026")
     assert decide_both(done, dict(head, newest="2026-10-14", published=7), "local") == (True, "landing page {'newest': '2026-09-02', 'published': 6} -> {'newest': '2026-10-14', 'published': 7}")
     assert decide_both(done, dict(head, published=5), "local")[0], "a link that goes away is a change too"
-    assert decide_both(dict(done, listing=dict(listing, at=stamp(25 * 60))), head, "local")[1].startswith("last full listing")
+    assert decide_both(dict(done, listing=dict(listing, at=stamp(pipeline.LISTING_HOURS * 60 + 1))), head, "local")[1].startswith("last full listing")
+    assert decide_both(dict(done, listing=dict(listing, at=stamp(pipeline.LISTING_HOURS * 60 - 1))), head, "local") == (False, "up to date")
     failed = [{"stopped": "Blocked: x", "ended": stamp(5)}]
     assert decide_both(dict(done, runs=failed), head, "local")[1] == "backing off 15 minutes after a failed run: Blocked"
     assert decide_both(dict(done, runs=failed * 3), head, "local")[1].startswith("backing off 60 minutes")

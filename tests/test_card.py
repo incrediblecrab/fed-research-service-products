@@ -6,7 +6,7 @@ from huggingface_hub import DatasetCard
 from fed_products import minneapolis
 from fed_products.beige_book import COLUMNS
 from fed_products.card import COLUMN_DOCS, render, size_category
-from fed_products.pipeline import MAX_ATTEMPTS, PROBE_KEY, new_manifest, probe_state
+from fed_products.pipeline import LISTING_HOURS, MAX_ATTEMPTS, PROBE_KEY, new_manifest, probe_state
 from conftest import local_store, run_once, scripted
 
 T1 = "2026-09-01T10:00:00Z"
@@ -42,6 +42,12 @@ def test_each_page_assigned_by_the_boards_pdf_is_named(monkeypatch):
     assert note in render(new_manifest())
     monkeypatch.setattr(minneapolis, "MISDATED", {})
     assert "Where a page prints a day" not in render(new_manifest())
+
+
+def test_the_schedule_names_the_listing_age_at_which_the_probe_asks_for_a_sync(monkeypatch):
+    assert f"or the last complete sync is {LISTING_HOURS} hours old, the job reads every list" in render(new_manifest())
+    monkeypatch.setattr("fed_products.card.LISTING_HOURS", 7)
+    assert "or the last complete sync is 7 hours old" in render(new_manifest())
 
 
 def test_the_columns_say_a_row_without_text_can_name_a_page_that_holds_another_report():
