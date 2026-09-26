@@ -1,4 +1,4 @@
-"""The Board's lists and pages, from pages recorded September 25, 2026."""
+"""The Board's lists and pages, from pages recorded September 25, 2026 (the Kansas City page of March 6, 2024 on September 26)."""
 
 import pytest
 
@@ -104,11 +104,13 @@ def test_pages_of_each_era():
     (4, f"{MP}beigebook202601-summary.htm", "summary", "2026-01-14", "Overall Economic Activity\n\nOverall economic activity increased at a slight to modest pace", "not a commentary on the views of Federal Reserve officials."),
     (4, f"{MP}beigebook202601-boston.htm", "boston", "2026-01-14", "Summary of Economic Activity\n\nEconomic activity edged up further", "visit: https://www.bostonfed.org/in-the-region.aspx."),
     (4, f"{MP}beigebook202601-san-francisco.htm", "san-francisco", "2026-01-14", "Summary of Economic Activity\n\nEconomic activity in the Twelfth District expanded modestly", "san-francisco-fed-twelfth-district-beige-book/."),
+    # A footnote whose link back to the text is left out; the edition of March 6, 2024 is addressed as February.
+    (4, f"{MP}beigebook202402-kansas-city.htm", "kansas-city", "2024-03-06", "Summary of Economic Activity\n\nEconomic activity in the Tenth District was stable", "Footnotes\n\n1. \"SMERF\" is a hotel industry acronym referring to Social, Military, Educational, Religious and Fraternal group bookings."),
 ])
 def test_one_page_per_section(era, url, section, iso, opening, ending):
     text = parse_page(era, recorded(url), (section,), iso)[section]
     assert text.startswith(opening) and text.endswith(ending)
-    assert "Return to top" not in text and "Last Update" not in text
+    assert "Return to top" not in text and "Return to text" not in text and "Last Update" not in text
 
 
 @pytest.mark.parametrize("era, url, iso, openings", [
@@ -181,8 +183,18 @@ def test_a_note_at_the_foot_of_a_whole_edition_goes_with_the_section_that_links_
     # The summary's "prepared at" panel links a correction printed after the last district, below a rule.
     texts = parse_page(3, recorded(JULY_2022), STANDARD, "2022-07-13")
     assert texts["summary"].startswith("This report was prepared at the Federal Reserve Bank of Atlanta based on information collected on or before July 6, 2022.")
-    assert texts["summary"].endswith("\n\n*Note: On July 19, 2022, a typo was corrected to change the date from \"July 13, 2022\" to \"July 6, 2022\" in the following sentence: \"This report was prepared at the Federal Reserve Bank of Atlanta based on information collected on or before July 13, 2022.\" Return to text")
+    assert texts["summary"].endswith("\n\n*Note: On July 19, 2022, a typo was corrected to change the date from \"July 13, 2022\" to \"July 6, 2022\" in the following sentence: \"This report was prepared at the Federal Reserve Bank of Atlanta based on information collected on or before July 13, 2022.\"")
     assert "*Note" not in texts["san-francisco"] and texts["san-francisco"].endswith("with a notable exception being pet insurance.")
+
+
+def test_only_a_link_back_to_the_text_is_left_out():
+    url = f"{MP}beigebook202402-kansas-city.htm"
+    link = b'<a class="return" href="#f1r">Return to text</a>'
+    assert link in recorded(url)
+    unlinked = parse_page(4, recorded(url).replace(link, b"Return to text"), ("kansas-city",), "2024-03-06")["kansas-city"]
+    assert unlinked.endswith("Fraternal group bookings. Return to text"), "words that are not a link stay"
+    elsewhere = parse_page(4, recorded(url).replace(link, b'<a href="https://www.kansascityfed.org/">Return to text</a>'), ("kansas-city",), "2024-03-06")["kansas-city"]
+    assert elsewhere.endswith("Fraternal group bookings. Return to text"), "a link off the page stays"
 
 
 def test_a_note_at_the_foot_that_no_section_links_raises():

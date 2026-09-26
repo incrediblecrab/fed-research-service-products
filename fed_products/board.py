@@ -33,6 +33,8 @@ ERAS = (
     (4, re.compile(r"/monetarypolicy/beigebook\d{6,8}-summary\.htm$")),
 )
 NAV_LINKS = ("#top", "#pagetop")
+# A footnote's link back to where the text cites it: <a class="return" href="#f1r">Return to text</a> (Kansas City, March 6, 2024), and after the summary's note of July 13, 2022.
+BACKLINK = "Return to text"
 # The summary's note on who prepared it: "Prepared at the Federal Reserve Bank of Atlanta and based on information collected before October 20, 1997".
 COLLECTED = re.compile(rf"based\s+on\s+information\s+collected\s+(?:on\s+or\s+)?before\s+({'|'.join(MONTHS)})\s+(\d{{1,2}}),\s+(\d{{4}})")
 COLLECTED_DAYS = 31
@@ -194,9 +196,13 @@ def pages_of(era, html_url):
 
 
 def _drop_nav(container):
-    """Removes "Return to top" links: the table holding one (era 1), else its paragraph (era 2)."""
+    """Removes "Return to top" links: the table holding one (era 1), else its paragraph (era 2). A footnote's "Return to text" link goes alone, so the footnote stays."""
     for anchor in container.xpath(".//a[@href]"):
-        if anchor.get("href").strip() not in NAV_LINKS:
+        href = anchor.get("href").strip()
+        if href.startswith("#") and _text(anchor) == BACKLINK:
+            anchor.drop_tree()
+            continue
+        if href not in NAV_LINKS:
             continue
         blocks = anchor.xpath("ancestor::table[1]") or anchor.xpath("ancestor::p[1]")
         # A second link in a block already dropped finds that block detached.
@@ -297,6 +303,7 @@ def _era3(doc, sections, iso):
                 raise ParseError(f"era 3 {section}: the section does not start with its heading")
             anchor.drop_tree()
             head.drop_tree()
+        _drop_nav(run)
         if section in sections:
             out[section] = _require(element_text(run), f"era 3 {section}")
     return out

@@ -9,7 +9,7 @@ Offline tests: `pip install '.[test]'`, then `python -m pytest -q`. No network o
 **Files:**
 
 - `conftest.py`: a fetcher that serves recorded pages by URL, and a scripted Beige Book source.
-- `test_board.py`: the Board's lists, each of its four page layouts, notes at the foot of a page, and a page that holds another edition's report.
+- `test_board.py`: the Board's lists, each of its four page layouts, footnotes and their links back to the text, and a page that holds another edition's report.
 - `test_minneapolis.py`: the sitemap, report pages and their datelines.
 - `test_source.py`: every list read in full, the units they make, the rows a fetch returns, gaps, notes, page dates, conditional rechecks.
 - `test_text.py`: text layout.
