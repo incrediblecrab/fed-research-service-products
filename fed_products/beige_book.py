@@ -245,12 +245,14 @@ class BeigeBookSource:
             if response.status_code != 200:
                 raise PageMissing(f"HTTP {response.status_code} from {url}")
             page = minneapolis.parse_page(response.content, section)
-            if page.date in unit.others:
+            printed, listed = minneapolis.MISDATED.get((unit.id, code), (None, None))
+            day = listed if page.date == printed else page.date
+            if day in unit.others:
                 continue
-            if page.date not in by_date:
+            if day not in by_date:
                 raise minneapolis.ParseError(f"{url} is dated {page.date}; the lists name {sorted(by_date)} in {unit.id}")
             # A page with a note in place of the report gives a row without text that still names the page.
-            found[(page.date, section)] = make_row(by_date[page.date], section, page.text, minneapolis.SOURCE, url, lastmod)
+            found[(day, section)] = make_row(by_date[day], section, page.text, minneapolis.SOURCE, url, lastmod)
         rows = []
         for edition in unit.editions:
             extra = sorted((section for day, section in found if day == edition.date and section not in STANDARD), key=rank)

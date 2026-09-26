@@ -3,6 +3,7 @@
 import yaml
 from huggingface_hub import DatasetCard
 
+from fed_products import minneapolis
 from fed_products.beige_book import COLUMNS
 from fed_products.card import COLUMN_DOCS, render, size_category
 from fed_products.pipeline import MAX_ATTEMPTS, PROBE_KEY, new_manifest, probe_state
@@ -34,6 +35,13 @@ def test_an_empty_manifest_renders_a_card_without_data_files():
         assert "- Every section has text." in card and "Last complete sync:" not in card
         assert "from the first, when the Board's pages call it the Redbook" in card
     assert PROBE_KEY not in front_matter(render(None))
+
+
+def test_each_page_assigned_by_the_boards_pdf_is_named(monkeypatch):
+    note = "Where a page prints a day that no list names, it is assigned to its month's edition only once the Board's PDF of that edition was read and holds the same report: August 15, 1973, every section, whose pages print August 10, 1973; October 27, 1987, richmond, whose page prints October 23, 1987."
+    assert note in render(new_manifest())
+    monkeypatch.setattr(minneapolis, "MISDATED", {})
+    assert "Where a page prints a day" not in render(new_manifest())
 
 
 def test_a_synced_manifest_renders_its_numbers(tmp_path):

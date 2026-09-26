@@ -6,7 +6,7 @@ from collections import Counter, defaultdict
 from . import board, minneapolis
 from .beige_book import MINNEAPOLIS_RECHECK_DAYS, RECENT_DAYS, RECENT_RECHECK_DAYS, RECHECK_DAYS, REPO_ID, SCHEMA
 from .pipeline import LEASE_MINUTES, MAX_ATTEMPTS, PROBE_KEY, RETRY_AFTER_HOURS, probe_state
-from .sections import DISTRICTS
+from .sections import DISTRICTS, STANDARD, rank
 
 GITHUB = "https://github.com/incrediblecrab/fed-research-service-products"
 # The workflow's cron (.github/workflows/pipeline.yml); a test holds the two equal.
@@ -42,6 +42,20 @@ def size_category(rows):
 
 def spoken(iso):
     return board.spoken(iso) if iso else "none"
+
+
+def misdated_note():
+    """One clause per edition: the sections whose pages print another day, and that day."""
+    groups = defaultdict(list)
+    for (month, code), (printed, edition) in minneapolis.MISDATED.items():
+        groups[(edition, printed)].append(minneapolis.SLUGS[code])
+    parts = []
+    for (edition, printed), sections in sorted(groups.items()):
+        which = "every section" if set(STANDARD) <= set(sections) else ", ".join(sorted(sections, key=rank))
+        parts.append(f"{spoken(edition)}, {which}, whose {'pages print' if len(sections) > 1 else 'page prints'} {spoken(printed)}")
+    if not parts:
+        return ""
+    return f" Where a page prints a day that no list names, it is assigned to its month's edition only once the Board's PDF of that edition was read and holds the same report: {'; '.join(parts)}."
 
 
 def render(manifest):
@@ -140,7 +154,7 @@ def render(manifest):
         lines.append("- (no listing yet)")
     lines += [
         "",
-        "For earlier editions the Board has PDFs only, so their text is from the Federal Reserve Bank of Minneapolis's archive, which has the editions from 1970 on as HTML, one page per section. Its pages are addressed by month, and a page is assigned to the edition whose date it prints, never to its month.",
+        "For earlier editions the Board has PDFs only, so their text is from the Federal Reserve Bank of Minneapolis's archive, which has the editions from 1970 on as HTML, one page per section. Its pages are addressed by month, and a page is assigned to the edition whose date it prints, never to its month." + misdated_note(),
         "",
         "## Text layout",
         "",

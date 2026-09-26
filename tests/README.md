@@ -11,7 +11,7 @@ Offline tests: `pip install '.[test]'`, then `python -m pytest -q`. No network o
 - `conftest.py`: a fetcher that serves recorded pages by URL, and a scripted Beige Book source.
 - `test_board.py`: the Board's lists, and each of its four page layouts.
 - `test_minneapolis.py`: the sitemap, report pages and their datelines.
-- `test_source.py`: every list read in full, the units they make, the rows a fetch returns, gaps and notes, conditional rechecks.
+- `test_source.py`: every list read in full, the units they make, the rows a fetch returns, gaps, notes, page dates, conditional rechecks.
 - `test_text.py`: text layout.
 - `test_pipeline.py`: the sync loop: first sync, idle runs, changes, rechecks, removals, retries, the suspect-listing guard, resumption, refetch, the writer lease, the probe's decision.
 - `test_http.py`: pacing, challenges, rate limits, outages.

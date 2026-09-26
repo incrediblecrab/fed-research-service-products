@@ -2,7 +2,7 @@
 
 The Board hosts no edition before October 30, 1996, so those editions come from here. The site's sitemap (robots.txt allows it) lists each page as https://minneapolisfed.org/beige-book-reports/YYYY/YYYY-MM-xx, xx one of the section codes in SLUGS, with a lastmod. A page is a Next.js page whose __NEXT_DATA__ JSON holds the report as HTML; a missing page answers 404 with the site's landing page template.
 
-Pages are addressed by month, but two months held two editions each (June 2 and June 23, 1971; January 2 and January 29, 1980), and each address serves one of them. So a page belongs to the edition whose date its report prints, never to its month: on September 25, 2026, 9 of the 13 June 1971 addresses served June 2 and the other 4 June 23, and 5 of the 13 January 1980 addresses served January 2 and the other 8 January 29. The sections neither address serves are in no source's HTML.
+Pages are addressed by month, but two months held two editions each (June 2 and June 23, 1971; January 2 and January 29, 1980), and each address serves one of them. So a page belongs to the edition whose date its report prints, never to its month: on September 25, 2026, 9 of the 13 June 1971 addresses served June 2 and the other 4 June 23, and 5 of the 13 January 1980 addresses served January 2 and the other 8 January 29. The sections neither address serves are in no source's HTML. A page whose date is a day no list names is assigned only where MISDATED names it.
 
 Some pages hold a note in place of the report ("The January 12, 1971 Boston report is not available."); such a section has no text, and its row names the page.
 """
@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 
 from lxml import etree
 
-from .sections import DISTRICTS, names
+from .sections import DISTRICTS, STANDARD, names
 from .text import html_text, parse_html
 
 SITEMAP = "https://www.minneapolisfed.org/sitemap.xml"
@@ -29,6 +29,13 @@ NS = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
 DATELINE = re.compile(r"([A-Z][a-z]+) (\d{1,2}) ?, (\d{4})(?:\n|$)")
 # A note in place of the report is one short line.
 UNAVAILABLE = re.compile(r"[^\n]{0,150}\bnot available\b[^\n]{0,50}")
+# Pages that open with a day no list names, each assigned to an edition whose PDF on the Board's site holds the same report: {(month, code): (the date the page prints, the edition)}. Read September 25, 2026.
+MISDATED = {
+    # fomc19730821redbook19730815.pdf, dated August 15, 1973 on its cover, holds every report of the month, and each of the month's 13 pages prints August 10, 1973.
+    **{("1973-08", SECTION_SLUG[section]): ("1973-08-10", "1973-08-15") for section in STANDARD},
+    # fomc19871103beige19871027.pdf, page V-1: the same Richmond report, under a heading with no date. The month's other 12 pages print October 27, 1987.
+    ("1987-10", "ri"): ("1987-10-23", "1987-10-27"),
+}
 
 
 class ParseError(ValueError):

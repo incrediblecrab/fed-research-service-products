@@ -143,6 +143,25 @@ def test_a_page_dated_with_an_edition_outside_the_unit_raises_unless_the_board_h
     assert [row["id"] for row in rows if row["text"] is None] == ["1975-03-19-boston"]
 
 
+@pytest.mark.parametrize("code, edition, printed, opening", [
+    ("ri", "1987-10-27", "1987-10-23", "Overview\n\nGrowth remains the predominant trend in the Fifth District. Manufacturing is leading the way"),
+    ("su", "1973-08-15", "1973-08-10", "The overall impression conveyed by the District Banks' August Red Book reports is that business activity continues at a high level"),
+])
+def test_a_page_that_prints_a_day_no_list_names_is_assigned_only_where_misdated_names_it(monkeypatch, code, edition, printed, opening):
+    unit = mpls_unit({code: "2019-09-06 11:00:00"}, (edition,))
+    rows = BeigeBookSource(FakeFetcher()).fetch(unit, {})
+    row = next(row for row in rows if row["section"] == minneapolis.SLUGS[code])
+    assert (row["id"], row["url"]) == (f"{edition}-{minneapolis.SLUGS[code]}", minneapolis.page_url(edition[:7], code))
+    assert row["text"].startswith(opening)
+    monkeypatch.setattr(minneapolis, "MISDATED", {})
+    with pytest.raises(minneapolis.ParseError, match=f"dated {printed}"):
+        BeigeBookSource(FakeFetcher()).fetch(unit, {})
+
+
+def test_every_page_of_august_1973_is_misdated():
+    assert {code for month, code in minneapolis.MISDATED if month == "1973-08"} == {minneapolis.SECTION_SLUG[section] for section in STANDARD}
+
+
 def test_a_section_code_the_module_does_not_know_raises():
     codes = dict({minneapolis.SECTION_SLUG[s]: None for s in STANDARD}, xx="2019-09-06 11:00:00")
     with pytest.raises(minneapolis.ParseError, match="'xx'"):
