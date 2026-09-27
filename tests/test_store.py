@@ -202,6 +202,8 @@ def test_rows_round_trip_sorted_by_id_in_the_dataset_schema(tmp_path):
     assert pq.read_schema(path).equals(SCHEMA, check_metadata=False)
     empty = write_parquet([], tmp_path / "empty.parquet")
     assert empty["rows"] == 0 and read_parquet(tmp_path / "empty.parquet") == []
+    # The datasets library reads a file in batches the size of its first row group, and fails on one of 0 rows.
+    assert pq.ParquetFile(tmp_path / "empty.parquet").metadata.num_row_groups == 0
 
 
 def test_the_same_rows_write_the_same_bytes(tmp_path):
